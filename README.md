@@ -47,4 +47,6 @@ models/
 # 📦 Release
 如需直接使用的 Windows 可执行版本，请前往 GitHub Releases 页面下载。
 
+## 📄 License
 
+This project is licensed under the MIT License.
