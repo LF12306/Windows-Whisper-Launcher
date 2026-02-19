@@ -54,7 +54,7 @@ class Application(tk.Tk):
         
         # 自动查找路径
         base_dir = os.getcwd()
-        self.default_model = os.path.join(base_dir, "models", "ggml-large-v3-turbo.bin")
+        self.default_model = os.path.join(base_dir, "models", "ggml-large-v3.bin")
         
         # 自动寻找 exe
         bin_dir = os.path.join(base_dir, "bin")
