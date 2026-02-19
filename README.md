@@ -19,7 +19,6 @@ python gui_launcher.py
 ├─ bin/
 ├─ models/
 ├─ gui_launcher.py
-├─ 栞子.ico
 └─ README.md
 ```
 bin/
