@@ -11,6 +11,8 @@ python gui_launcher.py
 
 ## 使用前请确保models文件夹已有ggml-large-v3-turbo.bin或其他模型文件，如需更改请修改py
 
+# ！！！不要放在中文文件夹下运行，会报错的！！！
+
 ## 📁 目录结构说明
 ```
 .
