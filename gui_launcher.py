@@ -8,15 +8,14 @@ import ctypes
 import webbrowser
 import urllib.request
 import time
+import json
 
 
-# === 新增：PyInstaller 内置资源路径解析函数 ===
+# === PyInstaller 内置资源路径解析函数 ===
 def get_resource_path(relative_path):
     """ 获取资源的绝对路径 (兼容开发环境和 PyInstaller 打包后的环境) """
     if hasattr(sys, '_MEIPASS'):
-        # PyInstaller 打包后，会将资源解压到 sys._MEIPASS 指向的临时目录
         return os.path.join(sys._MEIPASS, relative_path)
-    # 开发环境下，直接从当前目录读取
     return os.path.join(os.path.abspath("."), relative_path)
 
 # === 核心工具：获取 8.3 短路径 (防闪退神器) ===
@@ -35,13 +34,19 @@ class Application(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Whisper 启动器（又名：这群人在唱or念什么东西）")
-        self.geometry("720x650")
+        self.geometry("720x680") # 稍微调高了一点窗口以放下新选项
 
-        # === 新增：加载内嵌的窗口图标 ===
+        # === 加载内嵌的窗口图标 ===
         icon_path = get_resource_path("栞子.ico")
         if os.path.exists(icon_path):
             self.iconbitmap(icon_path)
-        # ================================
+
+        # === 确定配置文件的保存路径 ===
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+        self.config_file = os.path.join(base_path, "models.json")
 
         self.process = None 
         self.is_running = False
@@ -80,6 +85,13 @@ class Application(tk.Tk):
         self.port_var = tk.IntVar(value=8080)
         tk.Entry(config_frame, textvariable=self.port_var, width=10).grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
+        # === 新增：自动启动选项 ===
+        self.auto_start_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(config_frame, text="打开程序时自动启动服务", variable=self.auto_start_var).grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=2)
+
+        # === 初始化时加载上次的配置 ===
+        self.load_config()
+
         # 2. 控制区
         btn_frame = tk.Frame(self)
         btn_frame.pack(pady=10)
@@ -104,9 +116,8 @@ class Application(tk.Tk):
                  bg="#e8f5e9", fg="#1b5e20").pack(pady=2)
         
         self.url_label = tk.Entry(info_frame, font=("Consolas", 11, "bold"), fg="#2e7d32", bg="#e8f5e9", justify="center", bd=0)
-        self.url_label.insert(0, "http://127.0.0.1:8080/v1")#如果写成完整的地址，打轴软件可能会因为路径不匹配而无法正确连接，所以默认显示到 /v1 就好
+        self.url_label.insert(0, f"http://127.0.0.1:{self.port_var.get()}/v1")
         self.url_label.pack(fill="x", padx=20, pady=5)
-        # 设置为只读，方便复制
         self.url_label.configure(state="readonly")
 
         # 4. 日志
@@ -116,6 +127,53 @@ class Application(tk.Tk):
         self.log_area.pack(fill="both", expand=True)
 
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        # === 新增：触发自动启动逻辑 ===
+        if self.auto_start_var.get():
+            # 延时 500ms 启动，确保 UI 已经完全渲染出来
+            self.after(500, self.auto_start_sequence)
+
+    def auto_start_sequence(self):
+        """ 执行自动启动前检查路径是否有效 """
+        exe = self.exe_path_var.get()
+        model = self.model_path_var.get()
+        if os.path.exists(exe) and os.path.exists(model):
+            self.log("[系统] 检测到自动启动已勾选，正在拉起服务...\n")
+            self.toggle_server()
+        else:
+            self.log("[系统] 自动启动取消：找不到 exe 或模型文件，请检查路径是否正确。\n")
+
+    # === 读取 JSON 配置 ===
+    def load_config(self):
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    if "exe_path" in config and os.path.exists(config["exe_path"]):
+                        self.exe_path_var.set(config["exe_path"])
+                    if "model_path" in config and os.path.exists(config["model_path"]):
+                        self.model_path_var.set(config["model_path"])
+                    if "port" in config:
+                        self.port_var.set(config["port"])
+                    # 读取自动启动状态
+                    if "auto_start" in config:
+                        self.auto_start_var.set(config["auto_start"])
+            except Exception as e:
+                print(f"读取配置文件失败: {e}")
+
+    # === 保存 JSON 配置 ===
+    def save_config(self):
+        config = {
+            "exe_path": self.exe_path_var.get(),
+            "model_path": self.model_path_var.get(),
+            "port": self.port_var.get(),
+            "auto_start": self.auto_start_var.get() # 保存自动启动状态
+        }
+        try:
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"保存配置文件失败: {e}")
 
     def browse_file(self, var, type_):
         ft = [("Executable", "*.exe")] if type_ == "exe" else [("GGML Model", "*.bin"), ("All Files", "*.*")]
@@ -132,7 +190,6 @@ class Application(tk.Tk):
         """ 检测服务存活 """
         if not self.is_running: return
         port = self.port_var.get()
-        # 即使改了路径，通常根路径 / 依然会返回 index 页面，用于检测存活足够了
         url = f"http://127.0.0.1:{port}/" 
         try:
             with urllib.request.urlopen(url, timeout=0.5) as response:
@@ -170,7 +227,6 @@ class Application(tk.Tk):
         self.btn_start.config(text="停止服务", state="normal", bg="#ffcdd2")
         self.btn_test.config(state="normal")
         
-        # 更新显示的地址
         self.url_label.configure(state="normal")
         self.url_label.delete(0, "end")
         self.url_label.insert(0, f"http://127.0.0.1:{port}/v1")
@@ -202,13 +258,12 @@ class Application(tk.Tk):
 
         if not os.path.exists(exe): return messagebox.showerror("错误", "找不到exe")
 
-        # === 核心修改：添加 --inference-path 参数 ===
         cmd = [
             exe, 
             "-m", model, 
             "--port", str(port), 
             "--host", "127.0.0.1",
-            "--inference-path", "/v1/audio/transcriptions"  # 👈 这里就是你要的关键修改
+            "--inference-path", "/v1/audio/transcriptions"
         ]
 
         self.log(f"[系统] 执行命令: {' '.join(cmd)}\n")
@@ -236,6 +291,8 @@ class Application(tk.Tk):
             messagebox.showerror("异常", str(e))
 
     def on_closing(self):
+        # 退出前自动保存配置
+        self.save_config()
         self.is_running = False
         if self.process: self.process.kill()
         self.destroy()
