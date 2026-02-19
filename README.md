@@ -9,7 +9,7 @@ python gui_launcher.py
 ```
 或使用 Release 页面提供的exe
 
-## 使用前请确保models文件夹已有ggml-large-v3-turbo.bin或其他模型文件，如需更改请修改py
+## 使用前请确保models文件夹已有ggml-large-v3-turbo.bin或其他模型文件，如需更改要使用的模型请修改py文件中的代码
 
 # ！！！不要放在中文文件夹下运行，会报错的！！！
 
