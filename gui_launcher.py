@@ -247,48 +247,83 @@ class Application(tk.Tk):
         webbrowser.open(f"http://127.0.0.1:{port}")
 
     def toggle_server(self):
-        if self.is_running:
-            self.is_running = False
-            if self.process: self.process.terminate()
-            return
+            if self.is_running:
+                self.is_running = False
+                if self.process: self.process.terminate()
+                return
 
-        exe = get_short_path(self.exe_path_var.get())
-        model = get_short_path(self.model_path_var.get())
-        port = self.port_var.get()
+            exe_abs = self.exe_path_var.get()
+            model_abs = self.model_path_var.get()
+            port = self.port_var.get()
 
-        if not os.path.exists(exe): return messagebox.showerror("错误", "找不到exe")
+            if not os.path.exists(exe_abs): 
+                return messagebox.showerror("错误", "找不到 Server 程序文件！")
+            if not os.path.exists(model_abs):
+                return messagebox.showerror("错误", "找不到模型文件！")
 
-        cmd = [
-            exe, 
-            "-m", model, 
-            "--port", str(port), 
-            "--host", "127.0.0.1",
-            "--inference-path", "/v1/audio/transcriptions"
-        ]
-
-        self.log(f"[系统] 执行命令: {' '.join(cmd)}\n")
-
-        try:
-            env = os.environ.copy()
-            env["PYTHONUNBUFFERED"] = "1"
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            # ================= 核心修复逻辑 =================
+            exe_dir = os.path.dirname(exe_abs)
             
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                startupinfo=startupinfo,
-                env=env,
-                bufsize=0
-            )
-            self.is_running = True
-            self.set_loading()
-            threading.Thread(target=self.read_output, daemon=True).start()
-            self.monitor_server()
-            
-        except Exception as e:
-            messagebox.showerror("异常", str(e))
+            # 1. 尝试获取模型相对于 exe 的相对路径
+            try:
+                model_arg = os.path.relpath(model_abs, start=exe_dir)
+            except ValueError:
+                # 如果在不同盘符（比如 exe 在 C 盘，model 在 D 盘），无法生成相对路径
+                model_arg = model_abs
+
+            # 2. 检查最终传给 whisper 的路径字符串中是否还包含非 ASCII 字符（中文等）
+            def has_non_ascii(text):
+                return any(ord(c) > 127 for c in text)
+
+            if has_non_ascii(model_arg):
+                # 如果此时还有中文，说明相对路径法也救不了（比如用户自己从外面选了个带中文的模型路径）
+                # 直接弹窗拦截，防止小白面对闪退一脸懵逼
+                messagebox.showerror(
+                    "路径错误 (防闪退拦截)",
+                    f"检测到模型路径参数包含中文字符：\n{model_arg}\n\n"
+                    f"AI 引擎底层不支持中文路径，强行启动会直接闪退！\n\n"
+                    f"👉 【小白专用解决方法】\n"
+                    f"1. 请把整个软件文件夹移动到纯英文路径下（例如 D:\\WhisperTool\\ ）\n"
+                    f"2. 如果你的电脑用户名是中文（放桌面就会报错），请直接剪切到 D 盘或 E 盘根目录！"
+                )
+                self.log("[系统] 启动已拦截：路径中包含引擎不支持的中文字符。\n")
+                return
+            # ================================================
+
+            # 注意：cmd 第一个参数依然用绝对路径启动 exe，但 -m 参数传纯英文的相对路径
+            cmd = [
+                exe_abs, 
+                "-m", model_arg, 
+                "--port", str(port), 
+                "--host", "127.0.0.1",
+                "--inference-path", "/v1/audio/transcriptions"
+            ]
+
+            self.log(f"[系统] 执行命令: {' '.join(cmd)}\n")
+            self.log(f"[系统] 工作目录(cwd): {exe_dir}\n") # 打印出来方便你调试
+
+            try:
+                env = os.environ.copy()
+                env["PYTHONUNBUFFERED"] = "1"
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                
+                self.process = subprocess.Popen(
+                    cmd,
+                    cwd=exe_dir,  # <--- 极其关键：将底层工作目录指定为 exe 所在的目录
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    startupinfo=startupinfo,
+                    env=env,
+                    bufsize=0
+                )
+                self.is_running = True
+                self.set_loading()
+                threading.Thread(target=self.read_output, daemon=True).start()
+                self.monitor_server()
+                
+            except Exception as e:
+                messagebox.showerror("启动异常", str(e))
 
     def on_closing(self):
         # 退出前自动保存配置
