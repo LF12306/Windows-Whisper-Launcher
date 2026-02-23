@@ -1,6 +1,9 @@
-# Whisper api Launcher
+<img width="974" height="196" alt="image" src="https://github.com/user-attachments/assets/2a32f607-9991-4b5a-bf46-3edc0b1cda99" /># Whisper api Launcher
 
 一个用于在 Windows 下快速启动本地部署 Whisper 语音识别api的图形化启动器。
+
+
+# [魔改版aegisub地址](https://github.com/liuchengwucn/Aegisub)
 
 
 # 🚀 使用说明
