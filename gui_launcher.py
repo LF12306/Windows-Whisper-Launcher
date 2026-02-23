@@ -7,7 +7,6 @@ from tkinter import filedialog, scrolledtext, messagebox
 import ctypes
 import webbrowser
 import urllib.request
-import time
 import json
 
 
@@ -56,15 +55,31 @@ class Application(tk.Tk):
         base_dir = os.getcwd()
         self.default_model = os.path.join(base_dir, "models", "ggml-large-v3.bin")
         
-        # 自动寻找 exe
+        # === 新增：环境探测与分支切换 ===
         bin_dir = os.path.join(base_dir, "bin")
-        possible_exes = ["whisper-server.exe", "server.exe"]
-        self.server_exe = os.path.join(bin_dir, "whisper-server.exe")
-        if os.path.exists(bin_dir):
-            for f in possible_exes:
-                if os.path.exists(os.path.join(bin_dir, f)):
-                    self.server_exe = os.path.join(bin_dir, f)
-                    break
+        
+        # 探测 CUDA
+        self.has_cuda = self.check_cuda_available()
+        
+        
+        if self.has_cuda:
+            # 环境支持 CUDA，指向 cuda 文件夹
+            target_exe = os.path.join(bin_dir, "cuda", "whisper-server.exe")
+            fallback_target = os.path.join(bin_dir, "whisper-server.exe") # 兼容旧版结构
+        else:
+            # 环境不支持，指向 cpu 文件夹
+            target_exe = os.path.join(bin_dir, "cpu", "whisper-server.exe")
+            fallback_target = target_exe # 如果没有cuda，就死磕cpu版
+        
+        # 验证文件是否存在
+        if os.path.exists(target_exe):
+            self.server_exe = target_exe
+        elif os.path.exists(fallback_target):
+            self.server_exe = fallback_target
+        else:
+            self.server_exe = "" # 让用户自己选
+
+        
 
         # --- 界面布局 ---
         # 1. 配置区
@@ -132,6 +147,19 @@ class Application(tk.Tk):
         if self.auto_start_var.get():
             # 延时 500ms 启动，确保 UI 已经完全渲染出来
             self.after(500, self.auto_start_sequence)
+
+
+
+    def check_cuda_available(self):
+        """静默检测系统是否存在 nvcuda.dll"""
+        try:
+            # 尝试加载 CUDA 驱动核心 DLL
+            ctypes.windll.LoadLibrary("nvcuda.dll")
+            return True
+        except OSError:
+            # 找不到 DLL 或加载失败
+            return False
+
 
     def auto_start_sequence(self):
         """ 执行自动启动前检查路径是否有效 """
